@@ -333,6 +333,12 @@ class Qwen3VLVisionModel(VisionModule):
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, 1, 1, -1).repeat(1, 1, 1, 2)
 
+        # Pre-compute cos/sin from freqs to match sglang's apply_rotary_pos_emb_native exactly.
+        # sglang pre-computes cos/sin in its cache and passes them directly; doing the same here
+        # eliminates numerical differences from torch.compile FMA fusion in the apply step.
+        rotary_pos_cos = torch.cos(rotary_pos_emb).squeeze(1).squeeze(1)  # (seq_len, rot_dim)
+        rotary_pos_sin = torch.sin(rotary_pos_emb).squeeze(1).squeeze(1)  # (seq_len, rot_dim)
+
         # Check if we need to pad for CUDA graphs
         use_cuda_graph_padding = self._uses_vision_cuda_graph()
         original_seq_len = seq_len
@@ -341,6 +347,8 @@ class Qwen3VLVisionModel(VisionModule):
             hidden_states, rotary_pos_emb, seq_len = _maybe_pad_vision_sequence_for_cuda_graph(
                 hidden_states, rotary_pos_emb, seq_len, max_seq_len
             )
+            rotary_pos_cos = F.pad(rotary_pos_cos, (0, 0, 0, max_seq_len - original_seq_len), value=0.0)
+            rotary_pos_sin = F.pad(rotary_pos_sin, (0, 0, 0, max_seq_len - original_seq_len), value=0.0)
         hidden_states = hidden_states[:, None]
         packed_seq_params, attention_mask = _vision_forward_packed_attention_setup(
             use_cuda_graph_padding=use_cuda_graph_padding,
@@ -355,6 +363,8 @@ class Qwen3VLVisionModel(VisionModule):
             attention_mask=attention_mask,
             inference_params=inference_params,
             rotary_pos_emb=rotary_pos_emb,
+            rotary_pos_cos=rotary_pos_cos,
+            rotary_pos_sin=rotary_pos_sin,
             packed_seq_params=packed_seq_params,
             **(extra_block_kwargs or {}),
         )

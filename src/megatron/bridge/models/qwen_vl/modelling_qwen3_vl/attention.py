@@ -89,8 +89,6 @@ class Qwen3VLSelfAttention(SelfAttention):
         # hidden_states: [sq, b, h]
         if self.config.flash_decode and not self.training and inference_context is not None:
             rotary_pos_emb = None
-        else:
-            assert rotary_pos_cos is None and rotary_pos_sin is None
 
         # For self attention we just duplicate the rotary_pos_emb if it isn't already
         if rotary_pos_emb is not None and not isinstance(rotary_pos_emb, tuple):
@@ -166,7 +164,14 @@ class Qwen3VLSelfAttention(SelfAttention):
         # relative positional embedding (rotary embedding)
         # ================================================
         nvtx_range_push(suffix="rotary_pos_emb")
-        if rotary_pos_emb is not None and not self.config.flash_decode:
+        if rotary_pos_cos is not None and rotary_pos_sin is not None:
+            # Vision path: use pre-computed cos/sin with sglang's apply_rotary_pos_emb_native
+            # to produce bit-identical results (same torch.compile fused ops).
+            from sglang.srt.layers.rotary_embedding.utils import apply_rotary_pos_emb_native
+            query, key = apply_rotary_pos_emb_native(
+                query, key, rotary_pos_cos, rotary_pos_sin, unsqueeze_dim=1
+            )
+        elif rotary_pos_emb is not None and not self.config.flash_decode:
             q_pos_emb, k_pos_emb = rotary_pos_emb
 
             if packed_seq_params is not None:
@@ -182,7 +187,6 @@ class Qwen3VLSelfAttention(SelfAttention):
                 cu_seqlens_q = cu_seqlens_kv = None
 
             if q_pos_emb is not None:
-                # TODO VIJAY: simplify
                 if inference_context is None or inference_context.is_static_batching():
                     query = apply_rotary_pos_emb_absolute(
                         query,
@@ -205,11 +209,6 @@ class Qwen3VLSelfAttention(SelfAttention):
                     config=self.config,
                     cu_seqlens=cu_seqlens_kv,
                 )
-
-            # TODO, can apply positional embedding to value_layer so it has
-            # absolute positional embedding.
-            # otherwise, only relative positional embedding takes effect
-            # value_layer = apply_rotary_pos_emb(value_layer, k_pos_emb)
         nvtx_range_pop(suffix="rotary_pos_emb")
 
         # ==================================
