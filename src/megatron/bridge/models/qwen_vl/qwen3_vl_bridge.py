@@ -185,7 +185,7 @@ class Qwen3VLBridge(MegatronModelBridge):
                     hf_param="model.visual.blocks.*.attn.qkv.bias",
                 ),
                 ReplicatedMapping(
-                    megatron_param="vision_model.patch_embed.proj.**",
+                    megatron_param="vision_model.patch_embed.**",
                     hf_param="model.visual.patch_embed.proj.**",
                 ),
                 ReplicatedMapping(
@@ -387,8 +387,8 @@ class Qwen3VLMoEBridge(MegatronModelBridge):
                     megatron_param="vision_model.decoder.layers.*.self_attention.linear_qkv.bias",
                     hf_param="model.visual.blocks.*.attn.qkv.bias",
                 ),
-                ReplicatedMapping(  # These patch_embed are conv, we need to use ReplicatedMapping
-                    megatron_param="vision_model.patch_embed.proj.**",
+                ReplicatedMapping(
+                    megatron_param="vision_model.patch_embed.**",
                     hf_param="model.visual.patch_embed.proj.**",
                 ),
                 ReplicatedMapping(

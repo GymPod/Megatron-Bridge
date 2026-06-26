@@ -361,10 +361,9 @@ class Qwen35VLMoEBridge(MegatronModelBridge):
                 ),
                 # =============================================================
                 # Vision Model: Patch embedding (replicated across TP ranks)
-                # These are conv layers that must be replicated
                 # =============================================================
                 ReplicatedMapping(
-                    megatron_param="vision_model.patch_embed.proj.**",
+                    megatron_param="vision_model.patch_embed.**",
                     hf_param="model.visual.patch_embed.proj.**",
                 ),
                 ReplicatedMapping(
@@ -642,7 +641,7 @@ class Qwen35VLBridge(MegatronModelBridge):
                 # Vision Model: Patch embedding (replicated across TP ranks)
                 # =============================================================
                 ReplicatedMapping(
-                    megatron_param="vision_model.patch_embed.proj.**",
+                    megatron_param="vision_model.patch_embed.**",
                     hf_param="model.visual.patch_embed.proj.**",
                 ),
                 ReplicatedMapping(

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Optional, Sequence, Union
 
 import torch
+import torch.nn.functional as F
 from megatron.core import mpu
 from megatron.core.packed_seq_params import PackedSeqParams
 from megatron.core.process_groups_config import ProcessGroupCollection
@@ -28,10 +29,12 @@ from torch import nn
 from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.transformer_config import Qwen3VLTransformerConfig
 
 
-# copied from https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3_vl/modeling_qwen3_vl.py
 class Qwen3VLVisionPatchEmbed(nn.Module):
     """
     Vision Patch Embed for Qwen3VL vision model.
+
+    Uses unfold + F.linear instead of nn.Conv3d so that aten::mm is exposed to
+    batch_invariant_mode's matmul_persistent patch, matching SGLang's precision.
     """
 
     def __init__(
@@ -45,16 +48,14 @@ class Qwen3VLVisionPatchEmbed(nn.Module):
         self.embed_dim = config.hidden_size
 
         kernel_size = [self.temporal_patch_size, self.patch_size, self.patch_size]
-        self.proj = nn.Conv3d(
-            self.in_channels,
-            self.embed_dim,
-            kernel_size=kernel_size,
-            stride=kernel_size,
-            bias=True,
+        self.weight = nn.Parameter(
+            torch.empty(self.embed_dim, self.in_channels, *kernel_size)
         )
+        self.bias = nn.Parameter(torch.empty(self.embed_dim))
+        self.kernel_size = kernel_size
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        target_dtype = self.proj.weight.dtype
+        target_dtype = self.weight.dtype
         hidden_states = hidden_states.view(
             -1,
             self.in_channels,
@@ -62,8 +63,14 @@ class Qwen3VLVisionPatchEmbed(nn.Module):
             self.patch_size,
             self.patch_size,
         )
-        hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).view(-1, self.embed_dim)
-        return hidden_states
+        hidden_states = hidden_states.to(dtype=target_dtype)
+        K1, K2, K3 = self.kernel_size
+        x = hidden_states.unfold(2, K1, K1).unfold(3, K2, K2).unfold(4, K3, K3)
+        N, Dp, Hp, Wp = x.shape[0], x.shape[2], x.shape[3], x.shape[4]
+        x = x.permute(0, 2, 3, 4, 1, 5, 6, 7).reshape(N, Dp, Hp, Wp, -1)
+        x = F.linear(x, self.weight.reshape(self.embed_dim, -1), self.bias)
+        x = x.permute(0, 4, 1, 2, 3)
+        return x.reshape(-1, self.embed_dim)
 
 
 # copied from https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3_vl/modeling_qwen3_vl.py
