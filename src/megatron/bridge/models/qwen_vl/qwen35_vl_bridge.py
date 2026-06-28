@@ -548,6 +548,11 @@ class Qwen35VLBridge(MegatronModelBridge):
             "language_model.decoder.layers.*.self_attention.k_layernorm.weight": "model.language_model.layers.*.self_attn.k_norm.weight",
             "language_model.decoder.layers.*.self_attention.linear_proj.weight": "model.language_model.layers.*.self_attn.o_proj.weight",
             # =================================================================
+            # Language Model: Standalone layernorms (unfused, used when batch_invariant_mode disables fusion)
+            # =================================================================
+            "language_model.decoder.layers.*.input_layernorm.weight": "model.language_model.layers.*.input_layernorm.weight",
+            "language_model.decoder.layers.*.pre_mlp_layernorm.weight": "model.language_model.layers.*.post_attention_layernorm.weight",
+            # =================================================================
             # Language Model: Linear attention (Gated DeltaNet) layers
             # =================================================================
             "language_model.decoder.layers.*.self_attention.in_proj.layer_norm_weight": "model.language_model.layers.*.input_layernorm.weight",
@@ -674,6 +679,9 @@ class Qwen35VLBridge(MegatronModelBridge):
                 f"language_model.mtp.layers.0.{layer_prefix}.mlp.linear_fc1.layer_norm_weight": "mtp.layers.0.post_attention_layernorm.weight",
                 f"language_model.mtp.layers.0.{layer_prefix}.mlp.linear_fc2.weight": "mtp.layers.0.mlp.down_proj.weight",
                 f"language_model.mtp.layers.0.{layer_prefix}.self_attention.linear_qkv.layer_norm_weight": "mtp.layers.0.input_layernorm.weight",
+                # Standalone layernorms (unfused, used when batch_invariant_mode disables fusion)
+                f"language_model.mtp.layers.0.{layer_prefix}.input_layernorm.weight": "mtp.layers.0.input_layernorm.weight",
+                f"language_model.mtp.layers.0.{layer_prefix}.pre_mlp_layernorm.weight": "mtp.layers.0.post_attention_layernorm.weight",
                 f"language_model.mtp.layers.0.{layer_prefix}.self_attention.q_layernorm.weight": "mtp.layers.0.self_attn.q_norm.weight",
                 f"language_model.mtp.layers.0.{layer_prefix}.self_attention.k_layernorm.weight": "mtp.layers.0.self_attn.k_norm.weight",
                 f"language_model.mtp.layers.0.{layer_prefix}.self_attention.linear_proj.weight": "mtp.layers.0.self_attn.o_proj.weight",
