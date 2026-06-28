@@ -149,6 +149,19 @@ class Qwen3VLModel(MegatronModule):
             if language_transformer_config.use_hf_vision_model:
                 raise ValueError("use_hf_vision_model is not supported for Qwen3VLModel for now")
             vision_transformer_layer_spec = get_vit_layer_with_transformer_engine_spec()
+            # Unfuse LayerNorm from QKV/fc1 in vision blocks to match SGLang's nn.LayerNorm.
+            # TE's fused LayerNormLinear uses a different CUDA kernel that produces ~2e-3
+            # max diff vs PyTorch nn.LayerNorm on bf16 inputs.
+            from megatron.core.transformer.torch_norm import WrappedTorchNorm
+
+            vision_transformer_layer_spec.submodules.input_layernorm = WrappedTorchNorm
+            vision_transformer_layer_spec.submodules.self_attention.submodules.linear_qkv = (
+                TEColumnParallelLinear
+            )
+            vision_transformer_layer_spec.submodules.pre_mlp_layernorm = WrappedTorchNorm
+            vision_transformer_layer_spec.submodules.mlp.submodules.linear_fc1 = (
+                TEColumnParallelLinear
+            )
             vision_patch_merger_spec = PatchMergerSubmodules(
                 patch_norm=TENorm,
                 linear_fc1=TEColumnParallelLinear,
