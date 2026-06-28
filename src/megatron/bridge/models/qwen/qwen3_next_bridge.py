@@ -116,6 +116,8 @@ class Qwen3NextBridge(MegatronModelBridge):
             "decoder.layers.*.self_attention.linear_proj.weight": "model.layers.*.self_attn.o_proj.weight",
             # Linear attention
             "decoder.layers.*.self_attention.in_proj.layer_norm_weight": "model.layers.*.input_layernorm.weight",
+            # Standalone input layernorm (unfused, used when batch_invariant_mode disables fusion)
+            "decoder.layers.*.input_layernorm.weight": "model.layers.*.input_layernorm.weight",
             "decoder.layers.*.self_attention.out_proj.weight": "model.layers.*.linear_attn.out_proj.weight",
             "decoder.layers.*.self_attention.A_log": "model.layers.*.linear_attn.A_log",
             "decoder.layers.*.self_attention.dt_bias": "model.layers.*.linear_attn.dt_bias",
