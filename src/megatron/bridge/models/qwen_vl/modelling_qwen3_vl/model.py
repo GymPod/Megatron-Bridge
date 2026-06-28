@@ -163,7 +163,7 @@ class Qwen3VLModel(MegatronModule):
                 TEColumnParallelLinear
             )
             vision_patch_merger_spec = PatchMergerSubmodules(
-                patch_norm=TENorm,
+                patch_norm=WrappedTorchNorm,
                 linear_fc1=TEColumnParallelLinear,
                 linear_fc2=TERowParallelLinear,
             )
