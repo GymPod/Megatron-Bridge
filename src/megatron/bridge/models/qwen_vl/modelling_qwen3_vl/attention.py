@@ -154,7 +154,7 @@ class Qwen3VLSelfAttention(SelfAttention):
             sequence_len_offset,
         )
 
-        if packed_seq_params is not None:
+        if packed_seq_params is not None and getattr(packed_seq_params, "qkv_format", None) == "thd":
             query = query.squeeze(1)
             key = key.squeeze(1)
             value = value.squeeze(1)
@@ -174,7 +174,7 @@ class Qwen3VLSelfAttention(SelfAttention):
         elif rotary_pos_emb is not None and not self.config.flash_decode:
             q_pos_emb, k_pos_emb = rotary_pos_emb
 
-            if packed_seq_params is not None:
+            if packed_seq_params is not None and getattr(packed_seq_params, "qkv_format", None) == "thd":
                 if packed_seq_params.cu_seqlens_q_padded is not None:
                     cu_seqlens_q = packed_seq_params.cu_seqlens_q_padded
                 else:
@@ -216,6 +216,7 @@ class Qwen3VLSelfAttention(SelfAttention):
         # ==================================
 
         nvtx_range_push(suffix="core_attention")
+        _attn_packed_seq_params = packed_seq_params if getattr(packed_seq_params, "qkv_format", None) == "thd" else None
         if self.checkpoint_core_attention and self.training:
             core_attn_out = self._checkpointed_attention_forward(
                 query,
@@ -224,7 +225,7 @@ class Qwen3VLSelfAttention(SelfAttention):
                 attention_mask,
                 attn_mask_type=attn_mask_type,
                 attention_bias=attention_bias,
-                packed_seq_params=packed_seq_params,
+                packed_seq_params=_attn_packed_seq_params,
             )
         else:
             if inference_context is None or inference_context.is_static_batching():
@@ -236,7 +237,7 @@ class Qwen3VLSelfAttention(SelfAttention):
                     attention_mask,
                     attn_mask_type=attn_mask_type,
                     attention_bias=attention_bias,
-                    packed_seq_params=packed_seq_params,
+                    packed_seq_params=_attn_packed_seq_params,
                 )
 
             else:

@@ -596,9 +596,10 @@ class Qwen3VLModel(MegatronModule):
                 combined_embeddings[vision_mask] = vision_embeds
                 combined_embeddings = combined_embeddings.transpose(0, 1).contiguous()
 
-            if combined_embeddings is not None and cp_size > 1 and packed_seq_params is None:
+            _is_thd = packed_seq_params is not None and getattr(packed_seq_params, "qkv_format", None) == "thd"
+            if combined_embeddings is not None and cp_size > 1 and not _is_thd:
                 combined_embeddings = split_data_cp_rank(combined_embeddings, cp_size, 0, cp_rank)
-            if packed_seq_params is not None:
+            if _is_thd:
                 if attention_mask is None:
                     attention_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
                 input_ids_thd, _ = preprocess_packed_seqs(
@@ -656,7 +657,7 @@ class Qwen3VLModel(MegatronModule):
             combined_embeddings = None
             # On non-pre_process PP stages (e.g. the last stage where MTP runs),
             # convert lm_input_ids to THD format so it matches position_ids.
-            if packed_seq_params is not None:
+            if packed_seq_params is not None and getattr(packed_seq_params, "qkv_format", None) == "thd":
                 if attention_mask is None:
                     attention_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
                 lm_input_ids, _ = preprocess_packed_seqs(
@@ -665,8 +666,9 @@ class Qwen3VLModel(MegatronModule):
 
         visual_pos_masks = vision_mask
         deepstack_visual_embeds = deepstack_feature_lists
+        _is_thd_format = packed_seq_params is not None and getattr(packed_seq_params, "qkv_format", None) == "thd"
         if self.config.sequence_parallel or cp_size > 1:
-            if packed_seq_params is None:  # BSHD
+            if not _is_thd_format:  # BSHD
                 visual_pos_masks, deepstack_visual_embeds = split_deepstack_embs(
                     visual_pos_masks,
                     deepstack_visual_embeds,
@@ -702,7 +704,7 @@ class Qwen3VLModel(MegatronModule):
                 video_grid_thw=video_grid_thw,
                 attention_mask=hf_attention_mask,
             )  #  [3*b*s]
-            if packed_seq_params is not None:
+            if packed_seq_params is not None and getattr(packed_seq_params, "qkv_format", None) == "thd":
                 # convert position_ids to THD format
                 position_ids = (
                     preprocess_packed_seqs(
