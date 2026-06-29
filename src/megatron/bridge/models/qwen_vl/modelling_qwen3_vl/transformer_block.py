@@ -105,6 +105,8 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         context: Tensor,
         context_mask: Tensor,
         rotary_pos_emb: Tensor,
+        rotary_pos_cos: Optional[Tensor],
+        rotary_pos_sin: Optional[Tensor],
         attention_bias: Tensor,
         packed_seq_params: PackedSeqParams,
         use_inner_fp8_context: bool,
@@ -112,7 +114,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         """Forward method with activation checkpointing."""
 
         def custom(start: int, end: int):
-            def custom_forward(hidden_states, attention_mask, context, context_mask, rotary_pos_emb):
+            def custom_forward(hidden_states, attention_mask, context, context_mask, rotary_pos_emb, rotary_pos_cos, rotary_pos_sin):
                 deepstack_feature_lists = []
                 for index in range(start, end):
                     layer = self._get_layer(index)
@@ -140,6 +142,8 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                             context=context,
                             context_mask=context_mask,
                             rotary_pos_emb=rotary_pos_emb,
+                            rotary_pos_cos=rotary_pos_cos,
+                            rotary_pos_sin=rotary_pos_sin,
                             attention_bias=attention_bias,
                             inference_context=None,
                             packed_seq_params=layer_packed_seq_params,
@@ -167,6 +171,8 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                     context,
                     context_mask,
                     rotary_pos_emb,
+                    rotary_pos_cos,
+                    rotary_pos_sin,
                 )
             else:
                 return tensor_parallel.checkpoint(
@@ -177,6 +183,8 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                     context,
                     context_mask,
                     rotary_pos_emb,
+                    rotary_pos_cos,
+                    rotary_pos_sin,
                 )
 
         deepstack_feature_lists = []
@@ -321,6 +329,8 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                     context=context,
                     context_mask=context_mask,
                     rotary_pos_emb=rotary_pos_emb,
+                    rotary_pos_cos=rotary_pos_cos,
+                    rotary_pos_sin=rotary_pos_sin,
                     attention_bias=attention_bias,
                     packed_seq_params=packed_seq_params,
                     use_inner_fp8_context=use_inner_fp8_context,
