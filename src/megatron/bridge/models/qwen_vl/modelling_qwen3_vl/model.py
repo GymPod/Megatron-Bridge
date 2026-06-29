@@ -21,15 +21,21 @@ from megatron.core.extensions.transformer_engine import (
     TENorm,
     TERowParallelLinear,
 )
-from megatron.core.models.vision.vit_layer_specs import get_vit_layer_with_transformer_engine_spec
+from megatron.core.models.vision.vit_layer_specs import (
+    get_vit_layer_with_transformer_engine_spec,
+)
 from megatron.core.packed_seq_params import PackedSeqParams
 from megatron.core.pipeline_parallel.utils import is_pp_last_stage
 from megatron.core.process_groups_config import ProcessGroupCollection
 from megatron.core.transformer import MegatronModule
 from megatron.core.transformer.spec_utils import ModuleSpec
-from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLConfig as Qwen3VLConfigHF
+from transformers.models.qwen3_vl.configuration_qwen3_vl import (
+    Qwen3VLConfig as Qwen3VLConfigHF,
+)
 
-from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.attention import Qwen3VLSelfAttention
+from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.attention import (
+    Qwen3VLSelfAttention,
+)
 from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.rope import get_rope_index
 from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.text_model import Qwen3VLGPTModel
 from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.transformer_config import (
@@ -49,7 +55,9 @@ from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.utils import (
     split_data_cp_rank,
     split_deepstack_embs,
 )
-from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.vision_model import Qwen3VLVisionModel
+from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.vision_model import (
+    Qwen3VLVisionModel,
+)
 
 
 class Qwen3VLModel(MegatronModule):
@@ -92,7 +100,9 @@ class Qwen3VLModel(MegatronModule):
         super().__init__(config=language_transformer_config)
 
         if hasattr(language_transformer_layer_spec, "submodules"):
-            language_transformer_layer_spec.submodules.self_attention.module = Qwen3VLSelfAttention
+            language_transformer_layer_spec.submodules.self_attention.module = (
+                Qwen3VLSelfAttention
+            )
 
         self.vision_transformer_config = vision_transformer_config
         self.pre_process = pre_process
@@ -130,24 +140,31 @@ class Qwen3VLModel(MegatronModule):
         self.vp_stage = None
         self.vp_size = self.config.virtual_pipeline_model_parallel_size
 
-        if hasattr(self.config, "dist_train") and getattr(self.config.dist_train, "use_dist_train", False) is True:
+        if (
+            hasattr(self.config, "dist_train")
+            and getattr(self.config.dist_train, "use_dist_train", False) is True
+        ):
             self.use_dist_train = True
             self.vision_to_llm_dp_ratio = self.config.dist_train.vision_to_llm_dp_ratio
             self.vision_embeds = None
             self.deepstack_feature_lists = None
-            assert not (self.add_encoder and self.add_decoder) and (self.add_encoder or self.add_decoder), (
+            assert not (self.add_encoder and self.add_decoder) and (
+                self.add_encoder or self.add_decoder
+            ), (
                 "add_encoder and add_decoder should not be both True or both False "
                 f"if use_dist_train is True, got {self.add_encoder} and {self.add_decoder}"
             )
-            assert self.pg_collection.cp.size() == 1, (
-                "currently, dist train does not support context parallelism for encoder."
-            )
+            assert (
+                self.pg_collection.cp.size() == 1
+            ), "currently, dist train does not support context parallelism for encoder."
         else:
             self.use_dist_train = False
 
         if self.pre_process and self.add_encoder:
             if language_transformer_config.use_hf_vision_model:
-                raise ValueError("use_hf_vision_model is not supported for Qwen3VLModel for now")
+                raise ValueError(
+                    "use_hf_vision_model is not supported for Qwen3VLModel for now"
+                )
             vision_transformer_layer_spec = get_vit_layer_with_transformer_engine_spec()
             # Unfuse LayerNorm from QKV/fc1 in vision blocks to match SGLang's nn.LayerNorm.
             # TE's fused LayerNormLinear uses a different CUDA kernel that produces ~2e-3
@@ -158,7 +175,9 @@ class Qwen3VLModel(MegatronModule):
             vision_transformer_layer_spec.submodules.self_attention.submodules.linear_qkv = (
                 TEColumnParallelLinear
             )
-            vision_transformer_layer_spec.submodules.pre_mlp_layernorm = WrappedTorchNorm
+            vision_transformer_layer_spec.submodules.pre_mlp_layernorm = (
+                WrappedTorchNorm
+            )
             vision_transformer_layer_spec.submodules.mlp.submodules.linear_fc1 = (
                 TEColumnParallelLinear
             )
@@ -168,7 +187,9 @@ class Qwen3VLModel(MegatronModule):
                 linear_fc2=TERowParallelLinear,
             )
 
-            vision_transformer_layer_spec.submodules.self_attention.module = Qwen3VLSelfAttention
+            vision_transformer_layer_spec.submodules.self_attention.module = (
+                Qwen3VLSelfAttention
+            )
             megatron_vision_transformer_config = get_vision_model_config(
                 vision_transformer_config, megatron_config=language_transformer_config
             )
@@ -203,19 +224,25 @@ class Qwen3VLModel(MegatronModule):
                 pg_collection=pg_collection,
             )
             if pre_process:
-                deepstack_indexes = getattr(vision_transformer_config, "deepstack_visual_indexes", [])
-                assert len(deepstack_indexes) <= len(self.language_model.decoder.layers), (
+                deepstack_indexes = getattr(
+                    vision_transformer_config, "deepstack_visual_indexes", []
+                )
+                assert len(deepstack_indexes) <= len(
+                    self.language_model.decoder.layers
+                ), (
                     "the deepstack_visual_embeds should on the first pp-stage of language model",
                     f"got {len(deepstack_indexes)} deepstack_visual_indexes, "
                     f" {len(self.language_model.decoder.layers)} language model layers",
                 )
 
-            self.share_embeddings_and_output_weights = self.language_model.share_embeddings_and_output_weights
+            self.share_embeddings_and_output_weights = (
+                self.language_model.share_embeddings_and_output_weights
+            )
 
         if self.pg_collection.cp.size() > 1:
-            assert self.config.calculate_per_token_loss, (
-                "Qwen3-VL model only supports context parallelism with calculate_per_token_loss enabled"
-            )
+            assert (
+                self.config.calculate_per_token_loss
+            ), "Qwen3-VL model only supports context parallelism with calculate_per_token_loss enabled"
 
         self._expose_language_model_for_cuda_graph_helper()
 
@@ -264,24 +291,32 @@ class Qwen3VLModel(MegatronModule):
         Args:
             input_tensor (list): Input tensor.
         """
-        assert isinstance(input_tensor, list), f"Input tensor must be a list, but got {type(input_tensor)}"
-        assert len(input_tensor) == 1, f"Input tensor must be a list of length 1, but got {len(input_tensor)}"
-        assert isinstance(input_tensor[0], dict), (
-            f"Input tensor[0] must be a dictionary, but got {type(input_tensor[0])}"
-        )
+        assert isinstance(
+            input_tensor, list
+        ), f"Input tensor must be a list, but got {type(input_tensor)}"
+        assert (
+            len(input_tensor) == 1
+        ), f"Input tensor must be a list of length 1, but got {len(input_tensor)}"
+        assert isinstance(
+            input_tensor[0], dict
+        ), f"Input tensor[0] must be a dictionary, but got {type(input_tensor[0])}"
         input_dict = input_tensor[0]
 
         if "vision_module" in input_dict:
             vision_module_output_tensor = input_dict["vision_module"]
-            assert vision_module_output_tensor.dim() == 3, (
-                f"vision_module must be 3D [b, s, h], got shape {tuple(vision_module_output_tensor.shape)}"
-            )
+            assert (
+                vision_module_output_tensor.dim() == 3
+            ), f"vision_module must be 3D [b, s, h], got shape {tuple(vision_module_output_tensor.shape)}"
             # bridge communicator send and receive tensors in 3D shape, [batch, seq, hidden].
             # Qwen3VL model needs vision embeds in 2D [batch*seq, hidden].
             # So we merge leading dims, e.g. [b, s, h] -> [b*s, h].
             d0, d1, d2 = vision_module_output_tensor.shape
-            vision_module_output_tensor = vision_module_output_tensor.reshape(d0 * d1, d2)
-            num_chunks = len(self.vision_transformer_config.deepstack_visual_indexes) + 1
+            vision_module_output_tensor = vision_module_output_tensor.reshape(
+                d0 * d1, d2
+            )
+            num_chunks = (
+                len(self.vision_transformer_config.deepstack_visual_indexes) + 1
+            )
             chunks = torch.chunk(vision_module_output_tensor, chunks=num_chunks, dim=0)
             self.vision_embeds = chunks[-1]
             self.deepstack_feature_lists = chunks[:-1]
@@ -301,7 +336,9 @@ class Qwen3VLModel(MegatronModule):
         # gives us non-lists or None
         if not isinstance(input_tensor, list):
             input_tensor = [input_tensor]
-        assert len(input_tensor) == 1, "input_tensor should only be length 1 for Qwen3VL"
+        assert (
+            len(input_tensor) == 1
+        ), "input_tensor should only be length 1 for Qwen3VL"
 
         if self.pre_process:
             self.encoder_hidden_state = input_tensor[0]
@@ -338,12 +375,20 @@ class Qwen3VLModel(MegatronModule):
 
         if freeze_vision_model and not freeze_vision_projection:
             if self.vision_model is not None:
-                for param in self.vision_model.decoder.deepstack_merger_list.parameters():
+                for (
+                    param
+                ) in self.vision_model.decoder.deepstack_merger_list.parameters():
                     param.requires_grad = True
                 for param in self.vision_model.merger.parameters():
                     param.requires_grad = True
 
-    def _cp_local_vision_embed_indices(self, vision_embeds, input_ids, packed_seq_params):
+        if freeze_vision_model and self.vision_model is not None:
+            self.vision_model.decoder.config.recompute_granularity = None
+            self.vision_model.eval()
+
+    def _cp_local_vision_embed_indices(
+        self, vision_embeds, input_ids, packed_seq_params
+    ):
         """Row indices selecting this CP rank's vision tokens from full-sequence vision embeds.
 
         ``forward`` computes vision embeddings for every image in the batch and scatters
@@ -382,7 +427,9 @@ class Qwen3VLModel(MegatronModule):
         # rank-dependent shortcuts may only happen after the collective.
         num_chunks = 2 * cp_size
         num_segments = len(cu_list) - 1
-        counts_local = torch.zeros(num_segments, 2, dtype=torch.long, device=flat.device)
+        counts_local = torch.zeros(
+            num_segments, 2, dtype=torch.long, device=flat.device
+        )
         for i in range(num_segments):
             seg_full = cu_list[i + 1] - cu_list[i]
             if seg_full % num_chunks != 0:
@@ -395,7 +442,9 @@ class Qwen3VLModel(MegatronModule):
         torch.distributed.all_gather(gathered, counts_local, group=cp_group)
         cp_rank = torch.distributed.get_rank(group=cp_group)
         if int(counts_local.sum()) == vision_embeds.shape[0]:
-            return None  # every vision token is local on this rank; embeds already match
+            return (
+                None  # every vision token is local on this rank; embeds already match
+            )
         # Re-order per-rank chunk counts into full chunk order (rank r owns chunks r and
         # 2*cp-1-r), then exclusive-prefix-sum to get each chunk's offset in the full
         # vision-token order (segment-major).
@@ -405,7 +454,9 @@ class Qwen3VLModel(MegatronModule):
             full_counts[:, r] = g[:, 0]
             full_counts[:, num_chunks - 1 - r] = g[:, 1]
         flat_counts = full_counts.reshape(-1)
-        offsets = (torch.cumsum(flat_counts, 0) - flat_counts).reshape(num_segments, num_chunks)
+        offsets = (torch.cumsum(flat_counts, 0) - flat_counts).reshape(
+            num_segments, num_chunks
+        )
         counts_cpu = counts_local.cpu()
         idx_parts = []
         for i in range(num_segments):
@@ -413,7 +464,9 @@ class Qwen3VLModel(MegatronModule):
                 n = int(counts_cpu[i, j])
                 if n:
                     start = int(offsets[i, chunk_id])
-                    idx_parts.append(torch.arange(start, start + n, device=vision_embeds.device))
+                    idx_parts.append(
+                        torch.arange(start, start + n, device=vision_embeds.device)
+                    )
         if not idx_parts:
             # No local vision tokens: select zero rows (None means "not pre-sharded").
             return torch.zeros(0, dtype=torch.long, device=vision_embeds.device)
@@ -466,7 +519,11 @@ class Qwen3VLModel(MegatronModule):
             output (torch.Tensor): Loss of shape [b, s] if labels are provided, otherwise logits of shape
                 [b, s, vocab_size].
         """
-        del inference_context, runtime_gather_output, mm_token_type_ids  # Unused, kept for API compatibility
+        del (
+            inference_context,
+            runtime_gather_output,
+            mm_token_type_ids,
+        )  # Unused, kept for API compatibility
         assert inference_params is None, "not support inference"
 
         vision_grid_thw = None
@@ -510,29 +567,35 @@ class Qwen3VLModel(MegatronModule):
                 if cp_size > 1 and self.config.vision_dp_when_cp:
                     if cp_img_num is None:
                         assert images_padded is None
-                        vision_data, vision_grid_thw, cp_img_num, images_padded = qwen3vl_cp_split(
-                            cp_size,
+                        vision_data, vision_grid_thw, cp_img_num, images_padded = (
+                            qwen3vl_cp_split(
+                                cp_size,
+                                vision_data,
+                                vision_grid_thw,
+                            )
+                        )
+                    vision_data, vision_grid_thw, seqlen_on_cp_ranks = (
+                        get_vision_cp_data(
                             vision_data,
                             vision_grid_thw,
+                            self.square_merge_size,
+                            cp_img_num,
+                            images_padded,
+                            cp_rank,
+                            cp_size,
                         )
-                    vision_data, vision_grid_thw, seqlen_on_cp_ranks = get_vision_cp_data(
-                        vision_data,
-                        vision_grid_thw,
-                        self.square_merge_size,
-                        cp_img_num,
-                        images_padded,
-                        cp_rank,
-                        cp_size,
                     )
                     vision_grid_thw = collapse_thw(vision_grid_thw)
                 if vision_data.shape[0] > 0:
                     if self.use_dist_train:
                         if self.vision_model is not None:
-                            vision_data, vision_grid_thw = get_dist_train_vision_dp_data(
-                                vision_data,
-                                vision_grid_thw,
-                                num_chunks=self.vision_to_llm_dp_ratio,
-                                dp_rank=self.pg_collection.dp.rank(),
+                            vision_data, vision_grid_thw = (
+                                get_dist_train_vision_dp_data(
+                                    vision_data,
+                                    vision_grid_thw,
+                                    num_chunks=self.vision_to_llm_dp_ratio,
+                                    dp_rank=self.pg_collection.dp.rank(),
+                                )
                             )
                             vision_embeds, deepstack_feature_lists = self.vision_model(
                                 hidden_states=vision_data,
@@ -596,14 +659,24 @@ class Qwen3VLModel(MegatronModule):
                 combined_embeddings[vision_mask] = vision_embeds
                 combined_embeddings = combined_embeddings.transpose(0, 1).contiguous()
 
-            _is_thd = packed_seq_params is not None and getattr(packed_seq_params, "qkv_format", None) == "thd"
+            _is_thd = (
+                packed_seq_params is not None
+                and getattr(packed_seq_params, "qkv_format", None) == "thd"
+            )
             if combined_embeddings is not None and cp_size > 1 and not _is_thd:
-                combined_embeddings = split_data_cp_rank(combined_embeddings, cp_size, 0, cp_rank)
+                combined_embeddings = split_data_cp_rank(
+                    combined_embeddings, cp_size, 0, cp_rank
+                )
             if _is_thd:
                 if attention_mask is None:
-                    attention_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
+                    attention_mask = torch.ones_like(
+                        input_ids, dtype=torch.bool, device=input_ids.device
+                    )
                 input_ids_thd, _ = preprocess_packed_seqs(
-                    input_ids, attention_mask, pre_process=True, pg_collection=self.pg_collection
+                    input_ids,
+                    attention_mask,
+                    pre_process=True,
+                    pg_collection=self.pg_collection,
                 )
                 lm_input_ids = input_ids_thd
                 _, _, vision_mask_thd = reorganize_inputs(
@@ -620,11 +693,17 @@ class Qwen3VLModel(MegatronModule):
                 )
 
                 if deepstack_feature_lists is not None:
-                    tmp_embeddings = torch.zeros_like(combined_embeddings.transpose(0, 1))
+                    tmp_embeddings = torch.zeros_like(
+                        combined_embeddings.transpose(0, 1)
+                    )
                     new_deepstack_feature_lists = []
                     for deepstack_visual_embed in deepstack_feature_lists:
                         if cp_local_vision_idx is not None:
-                            deepstack_visual_embed = deepstack_visual_embed.index_select(0, cp_local_vision_idx)
+                            deepstack_visual_embed = (
+                                deepstack_visual_embed.index_select(
+                                    0, cp_local_vision_idx
+                                )
+                            )
                         tmp_embeddings[vision_mask] = deepstack_visual_embed
                         tmp_embeddings_thd = preprocess_packed_seqs(
                             tmp_embeddings.contiguous(),
@@ -632,7 +711,9 @@ class Qwen3VLModel(MegatronModule):
                             pre_process=True,
                             pg_collection=self.pg_collection,
                         )[0]
-                        new_deepstack_feature_lists.append(tmp_embeddings_thd[vision_mask_thd].contiguous())
+                        new_deepstack_feature_lists.append(
+                            tmp_embeddings_thd[vision_mask_thd].contiguous()
+                        )
 
                     deepstack_feature_lists = new_deepstack_feature_lists
 
@@ -650,23 +731,38 @@ class Qwen3VLModel(MegatronModule):
                 combined_embeddings = combined_embeddings_thd
 
             if self.config.sequence_parallel:
-                combined_embeddings = tensor_parallel.scatter_to_sequence_parallel_region(combined_embeddings)
+                combined_embeddings = (
+                    tensor_parallel.scatter_to_sequence_parallel_region(
+                        combined_embeddings
+                    )
+                )
                 combined_embeddings = combined_embeddings.contiguous()
 
         else:
             combined_embeddings = None
             # On non-pre_process PP stages (e.g. the last stage where MTP runs),
             # convert lm_input_ids to THD format so it matches position_ids.
-            if packed_seq_params is not None and getattr(packed_seq_params, "qkv_format", None) == "thd":
+            if (
+                packed_seq_params is not None
+                and getattr(packed_seq_params, "qkv_format", None) == "thd"
+            ):
                 if attention_mask is None:
-                    attention_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
+                    attention_mask = torch.ones_like(
+                        input_ids, dtype=torch.bool, device=input_ids.device
+                    )
                 lm_input_ids, _ = preprocess_packed_seqs(
-                    input_ids, attention_mask, pre_process=True, pg_collection=self.pg_collection
+                    input_ids,
+                    attention_mask,
+                    pre_process=True,
+                    pg_collection=self.pg_collection,
                 )
 
         visual_pos_masks = vision_mask
         deepstack_visual_embeds = deepstack_feature_lists
-        _is_thd_format = packed_seq_params is not None and getattr(packed_seq_params, "qkv_format", None) == "thd"
+        _is_thd_format = (
+            packed_seq_params is not None
+            and getattr(packed_seq_params, "qkv_format", None) == "thd"
+        )
         if self.config.sequence_parallel or cp_size > 1:
             if not _is_thd_format:  # BSHD
                 visual_pos_masks, deepstack_visual_embeds = split_deepstack_embs(
@@ -704,7 +800,10 @@ class Qwen3VLModel(MegatronModule):
                 video_grid_thw=video_grid_thw,
                 attention_mask=hf_attention_mask,
             )  #  [3*b*s]
-            if packed_seq_params is not None and getattr(packed_seq_params, "qkv_format", None) == "thd":
+            if (
+                packed_seq_params is not None
+                and getattr(packed_seq_params, "qkv_format", None) == "thd"
+            ):
                 # convert position_ids to THD format
                 position_ids = (
                     preprocess_packed_seqs(
