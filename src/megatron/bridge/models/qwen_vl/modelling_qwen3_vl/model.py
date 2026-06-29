@@ -385,6 +385,13 @@ class Qwen3VLModel(MegatronModule):
         if freeze_vision_model and self.vision_model is not None:
             self.vision_model.decoder.config.recompute_granularity = None
             self.vision_model.eval()
+            self._freeze_vision_eval = True
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        if mode and getattr(self, "_freeze_vision_eval", False) and self.vision_model is not None:
+            self.vision_model.eval()
+        return self
 
     def _cp_local_vision_embed_indices(
         self, vision_embeds, input_ids, packed_seq_params
