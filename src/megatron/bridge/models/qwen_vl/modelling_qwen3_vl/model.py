@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import functools
 from typing import Optional
 
 import torch
@@ -178,9 +179,13 @@ class Qwen3VLModel(MegatronModule):
             vision_transformer_layer_spec.submodules.pre_mlp_layernorm = (
                 WrappedTorchNorm
             )
-            vision_transformer_layer_spec.submodules.mlp.submodules.linear_fc1 = (
-                TEColumnParallelLinear
-            )
+            # mlp may be a ModuleSpec (legacy) or a functools.partial of
+            # MLP.as_mlp_submodule carrying its MLPSubmodules in keywords.
+            mlp_spec = vision_transformer_layer_spec.submodules.mlp
+            if isinstance(mlp_spec, functools.partial):
+                mlp_spec.keywords["submodules"].linear_fc1 = TEColumnParallelLinear
+            else:
+                mlp_spec.submodules.linear_fc1 = TEColumnParallelLinear
             vision_patch_merger_spec = PatchMergerSubmodules(
                 patch_norm=WrappedTorchNorm,
                 linear_fc1=TEColumnParallelLinear,
