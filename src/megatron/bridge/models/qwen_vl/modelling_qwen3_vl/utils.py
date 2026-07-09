@@ -86,16 +86,20 @@ class Qwen3VLVisionRotaryEmbedding(nn.Module):
 
     def forward(self, seqlen: int) -> torch.Tensor:
         if not hasattr(self, "inv_freq"):
-            # Compute inv_freq on CPU to match sglang's RotaryEmbedding._compute_inv_freq
-            # (which uses device="cpu" when is_true_on_policy_enabled), then move to CUDA.
+            # Build inv_freq directly on CUDA to match sglang's RotaryEmbedding._compute_inv_freq
+            # under true-on-policy (device=torch.cuda.current_device()). The CPU pow differs from
+            # the CUDA pow by ~6e-8 at channel 1, tipping vision-rope cos by up to 6.1e-5 -> vision
+            # block-0 output diverges 1 bf16 ULP and compounds through 27 blocks + merger into the
+            # image-token LM embeddings, seeding the GDN recurrent state and driving abs_diff.
             inv_freq = 1.0 / (
                 self.theta
                 ** (
-                    torch.arange(0, self.dim, 2, dtype=torch.float, device="cpu")
+                    torch.arange(
+                        0, self.dim, 2, dtype=torch.float, device=torch.cuda.current_device()
+                    )
                     / self.dim
                 )
             )
-            inv_freq = inv_freq.to(device=torch.cuda.current_device())
             self.register_buffer("inv_freq", inv_freq, persistent=False)
         seq = torch.arange(seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype)
         freqs = torch.outer(seq, self.inv_freq)
